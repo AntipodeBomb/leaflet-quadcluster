@@ -1,0 +1,25 @@
+{
+  "name": "leaflet.clustersearch",
+  "version": "0.0.1",
+  "author": "Christopher Dudley <chris@terainsights.com>",
+  "description": "Provides Marker Clustering and Filtration for Leaflet",
+  "dependencies": {
+    "leaflet": "~0.7.1",
+    "d3": "~3.4.6"
+  },
+  "main": "dist/leaflet.clustersearch.js",
+  "scripts": {
+    "prepublish": "grunt"
+  },
+  "devDependencies": {
+    "grunt-contrib-clean": "~0.5.0",
+    "grunt": "~0.4.4",
+    "load-grunt-tasks": "~0.4.0",
+    "grunt-contrib-uglify": "~0.4.0",
+    "grunt-contrib-jshint": "~0.10.0",
+    "grunt-bowercopy": "~1.0.0",
+    "grunt-contrib-concat": "~0.4.0",
+    "browserify": "~3.43.0",
+    "grunt-browserify": "~2.0.7"
+  }
+}
