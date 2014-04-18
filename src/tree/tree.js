@@ -4,14 +4,16 @@
  *  @copyright Tera Insights, LLC 2014
  */
 
-/* global d3:true */
+/* global d3:true, L:true */
+
+(function() {
 
 /**
  *  Creates a new QuadTree generator. The generator can be configured with
  *  with an X accessor, Y accessor, and extent. The generator has defaults
  *  for all of these values.
  */
-function TreeGenerator() {
+L.QuadCluster.Tree = function() {
     /*
      *  The X position accessor. By default, for a given value `d`, the
      *  accessor returns `d.x`.
@@ -118,7 +120,7 @@ function TreeGenerator() {
     };
 
     return _gen;
-}
+};
 
 /*
  *  Creates a new quadtree from a set of points.
@@ -270,4 +272,4 @@ function aggregateNode(aggregate, node) {
     return state;
 }
 
-module.exports = TreeGenerator;
+}());

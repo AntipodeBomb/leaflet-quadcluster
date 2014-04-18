@@ -11,16 +11,14 @@ module.exports = function(grunt) {
             },
             all: [ 'src/**/*.js' ]
         },
-        browserify: {
+        concat: {
             source: {
-                options: {
-                    bundleOptions: {
-                        standalone: "<%= pkg.name %>"
-                    }
-                },
                 files: [{
-                    src: [ 'src/api.js' ],
-                    dest: 'dist/<%= pkg.name %>.js'
+                    dest: 'dist/<%= pkg.name %>.js',
+                    src: [
+                        'src/api.js',
+                        'src/tree/tree.js', 'src/tree/aggregate.js'
+                    ]
                 }]
             }
         },
@@ -47,6 +45,6 @@ module.exports = function(grunt) {
         }
     });
 
-    grunt.registerTask('build', [ 'jshint:all', 'browserify:source', 'uglify:source' ]);
+    grunt.registerTask('build', [ 'jshint:all', 'concat:source', 'uglify:source' ]);
     grunt.registerTask('default', ['build']);
 };

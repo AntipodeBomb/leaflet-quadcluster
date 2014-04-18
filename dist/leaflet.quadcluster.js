@@ -1,188 +1,24 @@
-!function(e){if("object"==typeof exports)module.exports=e();else if("function"==typeof define&&define.amd)define(e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),(f.leaflet||(f.leaflet={})).clustersearch=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
 
-var tree = _dereq_('./tree/api.js');
-
-module.exports = {
-    tree: tree
+L.QuadCluster = {
+    version: '0.0.1'
 };
 
-},{"./tree/api.js":3}],2:[function(_dereq_,module,exports){
-/**
- *  An object that represents an aggregation over the tree.
- *  @constructor
- */
-function TreeAggregate(init, filter, merge, acc, finalize) {
-    this.initialize = init;
-    this.filter = filter;
-    this.merge = merge;
-    this.accumulate = acc;
-    this.finalize = finalize;
-}
-
-/*
- *
- */
-function AggregateFactory() {
-    var _init = function() { return {}; };
-    var _filter = function() { return false; };
-    var _acc = function(state) { return state; };
-    var _merge = function(state) { return state; };
-    var _finalize = function(state) { return state; };
-
-    var _factory = function() {
-        return new TreeAggregate(_init, _filter, _merge, _acc, _finalize);
-    };
-
-    /*
-     *  Gets or sets the state initialization function.
-     *
-     *  The initialization function should take no arguments and return a
-     *  new state for use in the aggregation of the current node.
-     *
-     *  The default initialization function returns an empty object.
-     */
-    _factory.init = function(_) {
-        if( arguments.length === 0 ) {
-            return _init;
-        }
-        _init = _;
-        return _factory;
-    };
-
-    /*
-     *  Gets or sets the node filtration function.
-     *
-     *  The node filtration function takes as arguments the current node
-     *  and bounding box. The function should return true
-     *  if the node should be filtered (skipped).
-     *
-     *  The function should have the following form:
-     *
-     *  `filter(node)`
-     *
-     *  `node` is the current node.
-     *
-     *  The default filtration function always returns false.
-     */
-    _factory.filter = function(_) {
-        if( arguments.length === 0 ) {
-            return _filter;
-        }
-        _filter = _;
-        return _factory;
-    };
-
-    /*
-     *  Gets or sets the state accumulation function.
-     *
-     *  The node accumulation function takes the current state, the node
-     *  being added, and the bounding box, and returns the new state.
-     *  This function is called before child nodes are processed.
-     *
-     *  The function should have the following form:
-     *
-     *  `accumulate(state, node)`
-     *
-     *  `state` is the current state.
-     *  `node` is the current node.
-     *
-     *  The default accumulation function simply returns the current state.
-     */
-    _factory.accumulate = function(_) {
-        if( arguments.length === 0 ) {
-            return _acc;
-        }
-        _acc = _;
-        return _factory;
-    };
-
-    /*
-     *  Gets or sets the state merging function.
-     *
-     *  The merge function is called after `accumulate`, but before `finalize`.
-     *  The merge function will be called exactly once for each existing child.
-     *
-     *  The merge function should have the following form:
-     *
-     *  `merge(curState, otherState[, position])`
-     *
-     *  `curState` is the current state.
-     *  `otherState` is the state being merged.
-     *  `position` is an integer specifying in what quadrant otherState was built.
-     *      It will be one of 4 values:
-     *      0 - bottom-left
-     *      1 - bottom-right
-     *      2 - top-left
-     *      3 - top-right
-     *
-     *  The merge function should return the new state.
-     *
-     *  The default merge function simply returns the current state.
-     */
-    _factory.merge = function(_) {
-        if( arguments.length === 0 ) {
-            return _merge;
-        }
-        _merge = _;
-        return _factory;
-    };
-
-    /*
-     *  Gets or sets the state finalization function.
-     *
-     *  The finalization function is called after `accumulate` and all `merge`s.
-     *
-     *  The function should have the following form:
-     *
-     *  `finalize(state[, node])`
-     *
-     *  `state` is the current state.
-     *  `node` is the current node.
-     *
-     *  The finalization function should return the new state.
-     *
-     *  The default finalization function simply returns the current state.
-     */
-    _factory.finalize = function(_) {
-        if( arguments.length === 0 ) {
-            return _finalize;
-        }
-        _finalize = _;
-        return _factory;
-    };
-
-    return _factory;
-}
-
-module.exports = AggregateFactory;
-
-},{}],3:[function(_dereq_,module,exports){
-/**
- *  @overview Overall API for the tree submodule.
- *  @author Christopher Dudley <chris@terainsights.com>
- *  @copyright Tera Insights, LLC 2014
- */
-
-module.exports = {
-    tree: _dereq_('./tree.js'),
-    aggregate: _dereq_('./aggregate.js')
-};
-
-},{"./aggregate.js":2,"./tree.js":4}],4:[function(_dereq_,module,exports){
 /**
  *  @overview API to create quadtrees and perform aggregation on them.
  *  @author Christopher Dudley <chris@terainsights.com>
  *  @copyright Tera Insights, LLC 2014
  */
 
-/* global d3:true */
+/* global d3:true, L:true */
+
+(function() {
 
 /**
  *  Creates a new QuadTree generator. The generator can be configured with
  *  with an X accessor, Y accessor, and extent. The generator has defaults
  *  for all of these values.
  */
-function TreeGenerator() {
+L.QuadCluster.Tree = function() {
     /*
      *  The X position accessor. By default, for a given value `d`, the
      *  accessor returns `d.x`.
@@ -289,7 +125,7 @@ function TreeGenerator() {
     };
 
     return _gen;
-}
+};
 
 /*
  *  Creates a new quadtree from a set of points.
@@ -441,8 +277,164 @@ function aggregateNode(aggregate, node) {
     return state;
 }
 
-module.exports = TreeGenerator;
+}());
 
-},{}]},{},[1])
-(1)
-});;
+/**
+ *  @overview API for creation of aggregates over quad trees.
+ *  @author Christopher Dudley <chris@terainsights.com>
+ *  @copyright Tera Insights, LLC 2014
+ */
+
+/* global L:true */
+
+(function() {
+
+/**
+ *  An object that represents an aggregation over the tree.
+ *  @constructor
+ */
+function TreeAggregate(init, filter, merge, acc, finalize) {
+    this.initialize = init;
+    this.filter = filter;
+    this.merge = merge;
+    this.accumulate = acc;
+    this.finalize = finalize;
+}
+
+/*
+ *  Returns a factory that can be used to configure and create new tree
+ *  aggregates.
+ */
+L.QuadCluster.Aggregate = function () {
+    var _init = function() { return {}; };
+    var _filter = function() { return false; };
+    var _acc = function(state) { return state; };
+    var _merge = function(state) { return state; };
+    var _finalize = function(state) { return state; };
+
+    var _factory = function() {
+        return new TreeAggregate(_init, _filter, _merge, _acc, _finalize);
+    };
+
+    /*
+     *  Gets or sets the state initialization function.
+     *
+     *  The initialization function should take no arguments and return a
+     *  new state for use in the aggregation of the current node.
+     *
+     *  The default initialization function returns an empty object.
+     */
+    _factory.init = function(_) {
+        if( arguments.length === 0 ) {
+            return _init;
+        }
+        _init = _;
+        return _factory;
+    };
+
+    /*
+     *  Gets or sets the node filtration function.
+     *
+     *  The node filtration function takes as arguments the current node
+     *  and bounding box. The function should return true
+     *  if the node should be filtered (skipped).
+     *
+     *  The function should have the following form:
+     *
+     *  `filter(node)`
+     *
+     *  `node` is the current node.
+     *
+     *  The default filtration function always returns false.
+     */
+    _factory.filter = function(_) {
+        if( arguments.length === 0 ) {
+            return _filter;
+        }
+        _filter = _;
+        return _factory;
+    };
+
+    /*
+     *  Gets or sets the state accumulation function.
+     *
+     *  The node accumulation function takes the current state, the node
+     *  being added, and the bounding box, and returns the new state.
+     *  This function is called before child nodes are processed.
+     *
+     *  The function should have the following form:
+     *
+     *  `accumulate(state, node)`
+     *
+     *  `state` is the current state.
+     *  `node` is the current node.
+     *
+     *  The default accumulation function simply returns the current state.
+     */
+    _factory.accumulate = function(_) {
+        if( arguments.length === 0 ) {
+            return _acc;
+        }
+        _acc = _;
+        return _factory;
+    };
+
+    /*
+     *  Gets or sets the state merging function.
+     *
+     *  The merge function is called after `accumulate`, but before `finalize`.
+     *  The merge function will be called exactly once for each existing child.
+     *
+     *  The merge function should have the following form:
+     *
+     *  `merge(curState, otherState[, position])`
+     *
+     *  `curState` is the current state.
+     *  `otherState` is the state being merged.
+     *  `position` is an integer specifying in what quadrant otherState was built.
+     *      It will be one of 4 values:
+     *      0 - bottom-left
+     *      1 - bottom-right
+     *      2 - top-left
+     *      3 - top-right
+     *
+     *  The merge function should return the new state.
+     *
+     *  The default merge function simply returns the current state.
+     */
+    _factory.merge = function(_) {
+        if( arguments.length === 0 ) {
+            return _merge;
+        }
+        _merge = _;
+        return _factory;
+    };
+
+    /*
+     *  Gets or sets the state finalization function.
+     *
+     *  The finalization function is called after `accumulate` and all `merge`s.
+     *
+     *  The function should have the following form:
+     *
+     *  `finalize(state[, node])`
+     *
+     *  `state` is the current state.
+     *  `node` is the current node.
+     *
+     *  The finalization function should return the new state.
+     *
+     *  The default finalization function simply returns the current state.
+     */
+    _factory.finalize = function(_) {
+        if( arguments.length === 0 ) {
+            return _finalize;
+        }
+        _finalize = _;
+        return _factory;
+    };
+
+    return _factory;
+};
+
+}());

@@ -1,6 +1,4 @@
 
-var tree = require('./tree/api.js');
-
-module.exports = {
-    tree: tree
+L.QuadCluster = {
+    version: '0.0.1'
 };

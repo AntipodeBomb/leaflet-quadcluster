@@ -1,4 +1,14 @@
 /**
+ *  @overview API for creation of aggregates over quad trees.
+ *  @author Christopher Dudley <chris@terainsights.com>
+ *  @copyright Tera Insights, LLC 2014
+ */
+
+/* global L:true */
+
+(function() {
+
+/**
  *  An object that represents an aggregation over the tree.
  *  @constructor
  */
@@ -11,9 +21,10 @@ function TreeAggregate(init, filter, merge, acc, finalize) {
 }
 
 /*
- *
+ *  Returns a factory that can be used to configure and create new tree
+ *  aggregates.
  */
-function AggregateFactory() {
+L.QuadCluster.Aggregate = function () {
     var _init = function() { return {}; };
     var _filter = function() { return false; };
     var _acc = function(state) { return state; };
@@ -143,6 +154,6 @@ function AggregateFactory() {
     };
 
     return _factory;
-}
+};
 
-module.exports = AggregateFactory;
+}());
