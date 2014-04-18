@@ -1,5 +1,5 @@
 
-var tree = require('./tree.js');
+var tree = require('./tree/api.js');
 
 module.exports = {
     tree: tree
