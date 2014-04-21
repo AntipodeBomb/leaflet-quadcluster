@@ -1,0 +1,323 @@
+/**
+ *  @overview A layer that automatically clusters markers.
+ *  @author Christopher Dudley <chris@terainsights.com>
+ *  @copyright 2014 Tera Insights, LLC. All Rights Reserved.
+ *
+ *  Inspired by the MarkerClusterGroup class in Leaflet.markercluster.
+ *  Leaflet.markercluster:  Copyright 2012 Dave Leaver
+ *                          Licensed via the MIT License
+ */
+
+/**
+ *  Extends L.FeatureGroup by clustering the markers it contains.
+ */
+L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
+    options: {
+        /*
+         *  A cluster will cover at most a square of size maxClusterSize^2
+         *  pixels.
+         */
+        maxClusterSize: 160,
+        iconCreateFunction: null,
+
+    },
+    initialize: function(markers, options) {
+        L.Util.setOptions(this, options);
+        if( !this.options.iconCreateFunction) {
+            this.options.iconCreateFunction = this._defaultIconCreateFunction;
+        }
+
+        this._featureGroup = L.featureGroup();
+        this._featureGroup.on(L.FeatureGroup.EVENTS, this._propagateEvent, this);
+
+        this._nonPointGroup = L.featureGroup();
+        this._nonPointGroup.on(L.FeatureGroup.EVENTS, this._propagateEvent, this);
+
+        var treeGen = L.QuadCluster.Tree()
+            .x(function(d) { return d.getLatLng().lng; })
+            .y(function(d) { return d.getLatLng().lat; });
+
+        this._markers = markers;
+
+        // Ensure each marker has a unique ID
+        for( var i = 0; i < this._markers.length; i++ ) {
+            L.stamp(this._markers[i]);
+        }
+
+        // TODO: Support adding points in after the fact. Would require
+        // the bounds to be specified beforehand.
+        this._tree = treeGen(markers);
+    },
+
+    hasLayer: function(layer) {
+        if( !layer ) {
+            return false;
+        }
+
+        for( var i = 0; i < this._markers.length; i++ ) {
+            if( layer === this._markers[i] ) {
+                return true;
+            }
+        }
+
+        return this._nonPointGroup.hasLayer(layer);
+    },
+
+    addLayer: function(layer) {
+        if( layer instanceof L.LayerGroup ) {
+            var arr = [];
+            for( var i in layer._layers ) {
+                arr.push(layer._layers[i]);
+            }
+            return this.addLayers(arr);
+        }
+
+        // Don't cluster on non-point data
+        if( ! layer.getLatLng ) {
+            this._nonPointGroup.addLayer(layer);
+            return this;
+        }
+
+        // Don't add duplicates
+        if( this.hasLayer(layer) ) {
+            return this;
+        }
+
+        L.stamp(layer);
+        this._markers.push(layer);
+        this._tree.add(layer);
+
+        this._refreshVisible();
+
+        return this;
+    },
+
+    addLayers: function(layers) {
+        for( var i = 0; i < layers.length; i++ ) {
+            var layer = layers[i];
+
+            if( ! layer.getLatLng ) {
+                this._nonPointGroup.addLayer(layer);
+                continue;
+            }
+
+            if( this.hasLayer(layer) ) {
+                continue;
+            }
+
+            this._markers.push(layer);
+            this._tree.add(layer);
+        }
+
+        this._refreshVisible();
+        return this;
+    },
+    removeLayer: function(layer) {
+        // Requires the tree to be completely rebuilt if layer being removed is
+        // clustered.
+        throw new Error("removeLayer not yet implemented.");
+    },
+
+    // Overrides LayerGroup.eachLayer
+    eachLayer: function(method, context) {
+        // TODO: Probably need to iterate over all layers, not just visible.
+        this._featureGroup.eachLayer(method, context);
+        this._nonPointGroup.eachLayer(method, context);
+
+        return this;
+    },
+
+    // Overrides LayerGroup.getLayers
+    getLayers: function() {
+        var layers = [];
+        this.eachLayer(function(d) {
+            layers.push(d);
+        });
+        return layers;
+    },
+
+    // Overrides LayerGroup.getLayer
+    getLayer: function(id) {
+        if( this._featureGroup.hasLayer(id) ) {
+            return this._featureGroup.getLayer(id);
+        }
+
+        if( this._nonPointGroup.hasLayer(id) ) {
+            return this._nonPointGroup.getLayer(id);
+        }
+
+        for( var i = 0; i < this._markers.length; i++ ) {
+            if( L.stamp(this._markers[i]) === id ) {
+                return this._markers[i];
+            }
+        }
+
+        return null;
+    },
+
+    // Overrides  LayerGroup.clearLayers
+    clearLayers: function() {
+        this._markers = [];
+        this._tree.clear();
+
+        this._featureGroup.clearLayers();
+        this._nonPointGroup.clearLayers();
+
+        return this;
+    },
+
+    // Overrides FeatureGroup.onAdd
+    onAdd: function(map) {
+        this._map = map;
+
+        this._refreshVisible();
+
+        this._featureGroup.onAdd(map);
+        this._nonPointGroup.onAdd(map);
+
+        this._map.on('zoomend', this._zoomEnd, this);
+        this._map.on('moveend', this._moveEnd, this);
+    },
+
+    // Overrides FeatureGroup.onRemove
+    onRemove: function(map) {
+        map.off('zoomend', this._zoomEnd, this);
+        map.off('moveend', this._moveEnd, this);
+
+        this._featureGroup.onRemove(map);
+        this._nonPointGroup.onRemove(map);
+
+        this._map = null;
+    },
+
+    _getExpandedVisibleBounds: function() {
+        var map = this._map,
+            bounds = map.getBounds(),
+            sw = bounds.getSouthWest(),
+            ne = bounds.getNorthEast(),
+            //latDiff = L.Browser.mobile ? 0 : Math.abs(sw.lat - ne.lat),
+            //lngDiff = L.Browser.mobile ? 0 : Math.abs(sw.lng - ne.lng);
+            latDiff = 0,
+            lngDiff = 0;
+
+        return L.latLngBounds(
+            L.latLng(sw.lat - latDiff, sw.lng - lngDiff),
+            L.latLng(ne.lat + latDiff, ne.lng + lngDiff)
+        );
+    },
+
+    _getClusterArea: function() {
+        var map = this._map;
+        var size = this.options.maxClusterSize;
+
+        var mapBounds = map.getBounds();
+        var mapSize = map.getSize();
+
+        var latDiff = Math.abs(mapBounds.getNorth() - mapBounds.getSouth());
+        var lngDiff = Math.abs(mapBounds.getEast() - mapBounds.getWest());
+
+        var latPerPixel = latDiff / mapSize.y;
+        var lngPerPixel = lngDiff / mapSize.x;
+
+        var lat = latPerPixel * size;
+        var lng = lngPerPixel * size;
+
+        return lat * lng;
+    },
+
+    _refreshVisible: function() {
+        if( ! this._map ) {
+            return;
+        }
+
+        var newVisibleBounds = this._getExpandedVisibleBounds();
+        var clusterArea = this._getClusterArea();
+
+        var nodes = this._tree.cut(newVisibleBounds, clusterArea);
+
+        var newLayers = [];
+        for( var i = 0; i < nodes.length; i++ ) {
+            var node = nodes[i];
+
+            if( node.mass === 1 ) {
+                newLayers.push(node.getPoints()[0]);
+            } else {
+                // TODO: Allow customization of cluster nodes.
+                // (e.g., binding popups, etc)
+                newLayers.push(new L.QuadCluster.MarkerCluster(this, node));
+            }
+        }
+
+        this._featureGroup.clearLayers();
+        for( var j = 0; j < newLayers.length; j++ ) {
+            this._featureGroup.addLayer(newLayers[j]);
+        }
+    },
+
+    /*
+     *  Taken from Leaflet.markercluster.
+     */
+    _isOrIsParent: function(el, oel) {
+        while( oel ) {
+            if( el === oel ) {
+                return true;
+            }
+            oel = oel.parentNode;
+        }
+        return false;
+    },
+
+    /*
+     *  Taken from Leaflet.markercluster.
+     */
+    _propagateEvent: function(e) {
+        if( e.layer instanceof L.QuadCluster.MarkerCluster ) {
+            // Prevent multiple clustermouseover/off events if the icon
+            // is made up of stacked divs.
+            // Doesn't work in IE<=8, no relatedTarget.
+            if( e.originalEvent && this._isOrIsParent(e.layer._icon, e.originalEvent.relatedTarget)) {
+                return;
+            }
+            e.type = 'cluster' + e.type;
+        }
+
+        this.fire(e.type, e);
+    },
+
+    // Default functionality for icon creation
+    _defaultIconCreateFunction: function(cluster) {
+        var childCount = cluster.getChildCount();
+
+        // TODO: Dynamically create gradient based on currently visible clusters.
+        var c = 'marker-cluster marker-cluster-';
+        if( childCount < 10 ) {
+            c += 'small';
+        } else if( childCount < 100 ) {
+            c += 'medium';
+        } else {
+            c += 'large';
+        }
+
+        return new L.DivIcon({
+            html: '<div><span>' + childCount + '</span></div>',
+            className: c,
+            iconSize: new L.Point(40, 40)
+        });
+    },
+
+    _zoomEnd: function() {
+        if( !this._map ) {
+            return;
+        }
+
+        this._refreshVisible();
+    },
+
+    _moveEnd: function() {
+        this._refreshVisible();
+    }
+});
+
+L.QuadCluster.markerClusterGroup = function(markers, options) {
+    return new L.QuadCluster.MarkerClusterGroup(markers, options);
+};

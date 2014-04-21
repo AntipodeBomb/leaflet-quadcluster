@@ -37,8 +37,8 @@ L.QuadCluster.Tree = function() {
             throw new Error('Must specify an extent if no points given during initialization');
         }
 
-        var lower = [Infinity, -Infinity];
-        var upper = [Infinity, -Infinity];
+        var lower = [Infinity, Infinity];
+        var upper = [-Infinity, -Infinity];
 
         points.forEach(function(d) {
             var x = _x(d);
@@ -180,10 +180,38 @@ function createTree(points, x, y, extent) {
     };
 
     /*
+     *  Add multiple nodes at once.
+     */
+    _tree.addArray = function(arr) {
+        for( var i = 0; i < arr.length; i++ ) {
+            _root.add(arr[i]);
+        }
+
+        enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
+    };
+
+    /*
      *  Returns the root node.
      */
     _tree.root = function() {
         return _root;
+    };
+
+    _tree.clear = function() {
+        _root = _factory();
+        _nextID = 1;
+        enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
+
+        return _tree;
+    };
+
+    /*
+     *  Returns the overall bounds of the points contained within the tree.
+     */
+    _tree.bounds = function() {
+        var bounds = new L.LatLngBounds();
+        bounds.extend(_root.bounds);
+        return bounds;
     };
 
     function computeGravityCenter(node) {
@@ -199,8 +227,8 @@ function createTree(points, x, y, extent) {
         var totalPoints = 0;
         for( var i = 0; i < 4; i++ ) {
             if( node.nodes[i] && node.nodes[i].active ) {
-                var nX = node.nodes[i].center.lat;
-                var nY = node.nodes[i].center.lng;
+                var nX = node.nodes[i].center.lng;
+                var nY = node.nodes[i].center.lat;
                 var nodePoints = node.nodes[i].mass;
                 // Moving average
                 var cWgt = totalPoints / (totalPoints + nodePoints);
@@ -212,13 +240,13 @@ function createTree(points, x, y, extent) {
         }
 
         if( node.point ) {
-            cX = (cX * (totalPoints / (totalPoints + 1))) + (point.x / (totalPoints + 1));
-            cY = (cY * (totalPoints / (totalPoints + 1))) + (point.y / (totalPoints + 1));
+            cX = (cX * (totalPoints / (totalPoints + 1))) + (node.x / (totalPoints + 1));
+            cY = (cY * (totalPoints / (totalPoints + 1))) + (node.y / (totalPoints + 1));
             totalPoints += 1;
         }
 
         node.mass = totalPoints;
-        node.center = L.latLng(cX, cY);
+        node.center = L.latLng(cY, cX);
         node.active = totalPoints > 0;
     }
 
@@ -226,7 +254,7 @@ function createTree(points, x, y, extent) {
         storageArray = storageArray || [];
 
         // Shortcut for inactive nodes
-        if( ! this.node.active ) {
+        if( ! this.active ) {
             return storageArray;
         }
 
@@ -250,7 +278,7 @@ function createTree(points, x, y, extent) {
         var children = node.nodes;
 
         node.depth = depth;
-        node.bounds = L.latLngBounds([[x1, y1], [x2, y2]]);
+        node.bounds = L.latLngBounds([[y1, x1], [y2, x2]]);
 
         if( !node.id ) {
             node.id = _nextID++;
@@ -296,7 +324,7 @@ function createTree(points, x, y, extent) {
 
     function nodeArea(node) {
         var width = Math.abs(node.bounds.getEast() - node.bounds.getWest());
-        var height = Math.abs(node.bounds.getNorth() - node.bound.getSouth());
+        var height = Math.abs(node.bounds.getNorth() - node.bounds.getSouth());
         return width * height;
     }
 
@@ -312,9 +340,14 @@ function createTree(points, x, y, extent) {
                     return true;
                 }
 
-                if( ! bounds.contains(node.center) ) {
+                if( ! bounds.intersects(node.bounds) ) {
                     // Node isn't in field of view, skip.
                     return true;
+                }
+
+                // Always check the root node if it is active and visible.
+                if( ! node.parentID ) {
+                    return false;
                 }
 
                 var nArea = nodeArea(node);
@@ -344,7 +377,7 @@ function createTree(points, x, y, extent) {
     // Perform initial enhancement of nodes
     enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
 
-    return tree;
+    return _tree;
 }
 
 /**

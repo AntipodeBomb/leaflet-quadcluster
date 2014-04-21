@@ -17,7 +17,8 @@ module.exports = function(grunt) {
                     dest: 'dist/<%= pkg.name %>.js',
                     src: [
                         'src/api.js',
-                        'src/tree/tree.js', 'src/tree/aggregate.js'
+                        'src/tree/tree.js', 'src/tree/aggregate.js',
+                        'src/MarkerCluster.js', 'src/MarkerClusterGroup.js'
                     ]
                 }]
             }
