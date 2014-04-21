@@ -134,13 +134,16 @@ L.QuadCluster.Tree = function() {
  *
  *  id - a number unique for each node in the tree.
  *  depth - the depth in the tree at which the node resides (root is 0).
- *  bounds - an array [[x1, y1], [x2, y2]] giving the area the node covers.
+ *  bounds - A LatLngBounds that gives the area the node covers
  *  parentID - the id of the parent node, if any.
  *  nodes - a sparse array of the four child nodes in order: bottom-left, bottom-right, top-left, top-right
  *  leaf - a boolean indicating whether the node is a leaf (true) or internal (false)
  *  point - the point associated with this node, if any (can apply to leaves or internal)
  *  x - the x-coordinate of the associated point, if any
  *  y - the y-coordinate of the associated point, if any
+ *  active - boolean whether or not the node is active by the most recent filter
+ *  mass - the number of active points covered by this node
+ *  center - the gravity center of the node
  */
 function createTree(points, x, y, extent) {
     var _factory = d3.geom.quadtree()
@@ -163,7 +166,13 @@ function createTree(points, x, y, extent) {
      *  Perform aggregation on the tree.
      */
     _tree.aggregate = function(aggregate) {
-        aggregateNode(aggregate, _root, _x1, _y1, _x2, _y2);
+        var ret = aggregateNode(aggregate, _root, _x1, _y1, _x2, _y2);
+
+        if( ret === null ) {
+            ret = aggregate.initialize();
+        }
+
+        return ret;
     };
 
     /*
@@ -182,6 +191,63 @@ function createTree(points, x, y, extent) {
         return _root;
     };
 
+    function computeGravityCenter(node) {
+        if( ! node.active ) {
+            node.mass = 0;
+            node.center = L.latLng(0, 0);
+            return;
+        }
+
+        var cX = 0;
+        var cY = 0;
+
+        var totalPoints = 0;
+        for( var i = 0; i < 4; i++ ) {
+            if( node.nodes[i] && node.nodes[i].active ) {
+                var nX = node.nodes[i].center.lat;
+                var nY = node.nodes[i].center.lng;
+                var nodePoints = node.nodes[i].mass;
+                // Moving average
+                var cWgt = totalPoints / (totalPoints + nodePoints);
+                var nWgt = nodePoints / (totalPoints + nodePoints);
+                cX = (cX * cWgt) + (nX * nWgt);
+                cY = (cY * cWgt) + (nY * nWgt);
+                totalPoints += nodePoints;
+            }
+        }
+
+        if( node.point ) {
+            cX = (cX * (totalPoints / (totalPoints + 1))) + (point.x / (totalPoints + 1));
+            cY = (cY * (totalPoints / (totalPoints + 1))) + (point.y / (totalPoints + 1));
+            totalPoints += 1;
+        }
+
+        node.mass = totalPoints;
+        node.center = L.latLng(cX, cY);
+        node.active = totalPoints > 0;
+    }
+
+    function getPoints(storageArray) {
+        storageArray = storageArray || [];
+
+        // Shortcut for inactive nodes
+        if( ! this.node.active ) {
+            return storageArray;
+        }
+
+        if( this.point ) {
+            storageArray.push(this.point);
+        }
+
+        for( var i = 0; i < this.nodes.length; i++ ) {
+            if( this.nodes[i] ) {
+                this.nodes[i].getPoints(storageArray);
+            }
+        }
+
+        return storageArray;
+    }
+
     function enhanceNode(node, depth, x1, y1, x2, y2) {
         var sx = (x1 + x2) * 0.5;
         var sy = (y1 + y2) * 0.5;
@@ -189,10 +255,11 @@ function createTree(points, x, y, extent) {
         var children = node.nodes;
 
         node.depth = depth;
-        node.bounds = [[x1, y1], [x2, y2]];
+        node.bounds = L.latLngBounds([[x1, y1], [x2, y2]]);
 
         if( !node.id ) {
             node.id = _nextID++;
+            node.active = true;
         }
 
         if( children[0] ) { // bottom left child
@@ -214,7 +281,70 @@ function createTree(points, x, y, extent) {
             enhanceNode(children[3], depth+1, sx, sy, x2, y2);
             children[3].parentID = node.id;
         }
+
+        computeGravityCenter(node);
+
+        // Added methods
+        node.getPoints = getPoints;
     }
+
+    // Uses the given filter function to determine which nodes are active.
+    _tree.filter = function(filterFunc) {
+        var agg = L.QuadCluster.Aggregate().finalize(function(state, node) {
+            node.active = filterFunc(node);
+            computeGravityCenter(node);
+            return state;
+        })();
+
+        _tree.aggregate(agg);
+    };
+
+    function nodeArea(node) {
+        var width = Math.abs(node.bounds.getEast() - node.bounds.getWest());
+        var height = Math.abs(node.bounds.getNorth() - node.bound.getSouth());
+        return width * height;
+    }
+
+    // Returns a cut of the tree where the gravity center of all active nodes
+    // whose gravity center fits within `bounds` and cover at most `area`
+    _tree.cut = function(bounds, area) {
+        bounds = L.latLngBounds(bounds);
+
+        var agg = L.QuadCluster.Aggregate()
+            .filter(function(node) {
+                if( ! node.active ) {
+                    // Node isn't active, skip it.
+                    return true;
+                }
+
+                if( ! bounds.contains(node.center) ) {
+                    // Node isn't in field of view, skip.
+                    return true;
+                }
+
+                var nArea = nodeArea(node);
+                if( nArea <= (area / 4) ) {
+                    // Parent would be good enough.
+                    return true;
+                }
+
+                return false;
+            }).init(function() {
+                return [];
+            }).merge(function(state, oState) {
+                return state.concat(oState);
+            }).finalize(function(state, node) {
+                // If no children made the cut, then we are the furthest
+                // down node that is good enough.
+                if( state.length === 0 ) {
+                    state.push(node);
+                }
+
+                return state;
+            })();
+
+        return _tree.aggregate(agg);
+    };
 
     // Perform initial enhancement of nodes
     enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
