@@ -242,9 +242,11 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
             if( node.mass === 1 ) {
                 newLayers.push(node.getPoints()[0]);
             } else {
-                // TODO: Allow customization of cluster nodes.
-                // (e.g., binding popups, etc)
-                newLayers.push(new L.QuadCluster.MarkerCluster(this, node));
+                if( ! node.marker ) {
+                    node.marker = this._createMarkerCluster(node);
+                }
+                node.marker._updateIcon();
+                newLayers.push(node.marker);
             }
         }
 
@@ -303,6 +305,14 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
             className: c,
             iconSize: new L.Point(40, 40)
         });
+    },
+
+    _createMarkerCluster: function(node) {
+        // TODO: Allow configuration (bind popups, etc.)
+        var marker = new L.QuadCluster.MarkerCluster(this, node);
+        L.stamp(marker);
+
+        return marker;
     },
 
     _zoomEnd: function() {

@@ -198,7 +198,7 @@ function createTree(points, x, y, extent) {
     };
 
     _tree.clear = function() {
-        _root = _factory();
+        _root = _factory([]);
         _nextID = 1;
         enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
 
