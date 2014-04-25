@@ -327,15 +327,10 @@ function createTree(points, x, y, extent) {
         _tree.aggregate(agg);
     };
 
-    function nodeArea(node) {
-        var width = Math.abs(node.bounds.getEast() - node.bounds.getWest());
-        var height = Math.abs(node.bounds.getNorth() - node.bounds.getSouth());
-        return width * height;
-    }
-
     // Returns a cut of the tree where the gravity center of all active nodes
-    // whose gravity center fits within `bounds` and cover at most `area`
-    _tree.cut = function(bounds, area) {
+    // whose gravity center fits within `bounds` and are at most
+    // 'maxLong' wide
+    _tree.cut = function(bounds, maxLong) {
         bounds = L.latLngBounds(bounds);
 
         var agg = L.QuadCluster.Aggregate()
@@ -355,8 +350,8 @@ function createTree(points, x, y, extent) {
                     return false;
                 }
 
-                var nArea = nodeArea(node);
-                if( nArea <= (area / 4) ) {
+                var diffLong = Math.abs(node.bounds.getEast() - node.bounds.getWest());
+                if( diffLong < (maxLong / 2) ) {
                     // Parent would be good enough.
                     return true;
                 }
@@ -666,6 +661,10 @@ L.QuadCluster.MarkerCluster = L.Marker.extend({
     },
     createShadow: function() {
         return this._iconObj.createShadow();
+    },
+
+    spiderfy: function() {
+        // TODO: Implement
     }
 });
 
@@ -689,8 +688,11 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
          *  pixels.
          */
         maxClusterSize: 160,
+        clusterSizeScalingFactor: 1.4,
         iconCreateFunction: null,
 
+        zoomToBoundsOnClick: true,
+        spiderfyOnMaxZoom: true,
     },
     initialize: function(markers, options) {
         L.Util.setOptions(this, options);
@@ -848,6 +850,10 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
 
         this._map.on('zoomend', this._zoomEnd, this);
         this._map.on('moveend', this._moveEnd, this);
+
+        if( this.options.zoomToBoundsOnClick || this.options.spiderfyOnMaxZoom ) {
+            this.on('clusterclick', this._zoomOrSpiderfy, this);
+        }
     },
 
     // Overrides FeatureGroup.onRemove
@@ -859,6 +865,10 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         this._nonPointGroup.onRemove(map);
 
         this._map = null;
+
+        if( this.options.zoomToBoundsOnClick || this.options.spiderfyOnMaxZoom ) {
+            this.off('clusterclick', this._zoomOrSpiderfy, this);
+        }
     },
 
     _getExpandedVisibleBounds: function() {
@@ -877,23 +887,13 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         );
     },
 
-    _getClusterArea: function() {
+    _getClusterWidth: function() {
         var map = this._map;
         var size = this.options.maxClusterSize;
+        var scale = this.options.clusterSizeScalingFactor;
+        var zoom = map.getZoom();
 
-        var mapBounds = map.getBounds();
-        var mapSize = map.getSize();
-
-        var latDiff = Math.abs(mapBounds.getNorth() - mapBounds.getSouth());
-        var lngDiff = Math.abs(mapBounds.getEast() - mapBounds.getWest());
-
-        var latPerPixel = latDiff / mapSize.y;
-        var lngPerPixel = lngDiff / mapSize.x;
-
-        var lat = latPerPixel * size;
-        var lng = lngPerPixel * size;
-
-        return lat * lng;
+        return (size * scale) / Math.pow(2, zoom);
     },
 
     _refreshVisible: function() {
@@ -902,9 +902,9 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         }
 
         var newVisibleBounds = this._getExpandedVisibleBounds();
-        var clusterArea = this._getClusterArea();
+        var clusterWidth = this._getClusterWidth();
 
-        var nodes = this._tree.cut(newVisibleBounds, clusterArea);
+        var nodes = this._tree.cut(newVisibleBounds, clusterWidth);
 
         var newLayers = [];
         for( var i = 0; i < nodes.length; i++ ) {
@@ -996,6 +996,22 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
 
     _moveEnd: function() {
         this._refreshVisible();
+    },
+
+    _zoomOrSpiderfy: function(e) {
+        var map = this._map;
+        if( map.getMaxZoom() == map.getZoom()) {
+            if( this.options.spiderfyOnMaxZoom ) {
+                e.layer.spiderfy();
+            }
+        } else if( this.options.zoomToBoundsOnClick ) {
+            e.layer.zoomToBounds();
+        }
+
+        // Focus the map again for keyboard users
+        if( e.originalEvent && e.originalEvent.keyCode === 13 ) {
+            map._container.focus();
+        }
     }
 });
 

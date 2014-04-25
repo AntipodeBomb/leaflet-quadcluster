@@ -322,15 +322,10 @@ function createTree(points, x, y, extent) {
         _tree.aggregate(agg);
     };
 
-    function nodeArea(node) {
-        var width = Math.abs(node.bounds.getEast() - node.bounds.getWest());
-        var height = Math.abs(node.bounds.getNorth() - node.bounds.getSouth());
-        return width * height;
-    }
-
     // Returns a cut of the tree where the gravity center of all active nodes
-    // whose gravity center fits within `bounds` and cover at most `area`
-    _tree.cut = function(bounds, area) {
+    // whose gravity center fits within `bounds` and are at most
+    // 'maxLong' wide
+    _tree.cut = function(bounds, maxLong) {
         bounds = L.latLngBounds(bounds);
 
         var agg = L.QuadCluster.Aggregate()
@@ -350,8 +345,8 @@ function createTree(points, x, y, extent) {
                     return false;
                 }
 
-                var nArea = nodeArea(node);
-                if( nArea <= (area / 4) ) {
+                var diffLong = Math.abs(node.bounds.getEast() - node.bounds.getWest());
+                if( diffLong < (maxLong / 2) ) {
                     // Parent would be good enough.
                     return true;
                 }

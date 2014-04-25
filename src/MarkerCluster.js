@@ -62,5 +62,9 @@ L.QuadCluster.MarkerCluster = L.Marker.extend({
     },
     createShadow: function() {
         return this._iconObj.createShadow();
+    },
+
+    spiderfy: function() {
+        // TODO: Implement
     }
 });
