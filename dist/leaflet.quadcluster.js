@@ -871,6 +871,11 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         }
     },
 
+    filter: function(filterFunction) {
+        this._tree.filter(filterFunction);
+        this._refreshVisible();
+    },
+
     _getExpandedVisibleBounds: function() {
         var map = this._map,
             bounds = map.getBounds(),
