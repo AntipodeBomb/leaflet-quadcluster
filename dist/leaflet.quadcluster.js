@@ -962,6 +962,8 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         }
 
         this._currentCut = nodes;
+
+        this.fire('refresh', newLayers);
     },
 
     /*
