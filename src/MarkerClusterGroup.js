@@ -215,7 +215,7 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         var ret = [];
 
         allVis.forEach(function(d) {
-            if( !(d instanceof L.QuadTree.MarkerCluster) ) {
+            if( !(d instanceof L.QuadCluster.MarkerCluster) ) {
                 ret.push(d);
             }
         });
@@ -228,7 +228,7 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         var ret = [];
 
         allVis.forEach(function(d) {
-            if( d instanceof L.QuadTree.MarkerCluster ) {
+            if( d instanceof L.QuadCluster.MarkerCluster ) {
                 ret.push(d);
             }
         });
