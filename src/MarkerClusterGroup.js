@@ -206,6 +206,36 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         this._refreshVisible();
     },
 
+    getVisible: function() {
+        return this._featureGroup.getLayers();
+    },
+
+    getVisibleMarkers: function() {
+        var allVis = this.getVisible();
+        var ret = [];
+
+        allVis.forEach(function(d) {
+            if( !(d instanceof L.QuadTree.MarkerCluster) ) {
+                ret.push(d);
+            }
+        });
+
+        return ret;
+    },
+
+    getVisibleClusters: function() {
+        var allVis = this.getVisible();
+        var ret = [];
+
+        allVis.forEach(function(d) {
+            if( d instanceof L.QuadTree.MarkerCluster ) {
+                ret.push(d);
+            }
+        });
+
+        return ret;
+    },
+
     _getExpandedVisibleBounds: function() {
         var map = this._map,
             bounds = map.getBounds(),
@@ -260,6 +290,8 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         for( var j = 0; j < newLayers.length; j++ ) {
             this._featureGroup.addLayer(newLayers[j]);
         }
+
+        this._currentCut = nodes;
     },
 
     /*
