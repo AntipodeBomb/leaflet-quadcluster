@@ -360,7 +360,11 @@ function createTree(points, x, y, extent) {
                 // If no children made the cut, then we are the furthest
                 // down node that is good enough.
                 if( state.length === 0 ) {
-                    state.push(node);
+                    // Don't bother showing if the node center isn't in the
+                    // field of view
+                    if( bounds.contains(node.center) ) {
+                        state.push(node);
+                    }
                 }
 
                 return state;
