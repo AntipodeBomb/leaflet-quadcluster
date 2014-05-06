@@ -369,7 +369,7 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         var childCount = cluster.getChildCount();
 
         // TODO: Dynamically create gradient based on currently visible clusters.
-        var c = 'marker-cluster marker-cluster-';
+        var c = 'quadtree-cluster quadtree-cluster-';
         if( childCount < 10 ) {
             c += 'small';
         } else if( childCount < 100 ) {
