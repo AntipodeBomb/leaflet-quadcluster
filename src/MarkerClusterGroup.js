@@ -23,6 +23,10 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
 
         zoomToBoundsOnClick: true,
         spiderfyOnMaxZoom: true,
+
+        singlesOnZoom: 14,  // Individual markers past this zoom level
+        clusterEpsilon: 0.01    // How close two points have to be to be the
+                                // same location
     },
     initialize: function(markers, options) {
         L.Util.setOptions(this, options);
@@ -38,7 +42,8 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
 
         var treeGen = L.QuadCluster.Tree()
             .lng(function(d) { return d.getLatLng().lng; })
-            .lat(function(d) { return d.getLatLng().lat; });
+            .lat(function(d) { return d.getLatLng().lat; })
+            .epsilon(this.options.clusterEpsilon);
 
         this._markers = markers;
 
@@ -261,22 +266,20 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         return (size * scale) / Math.pow(2, zoom);
     },
 
-    _refreshVisible: function() {
-        if( ! this._map ) {
-            return;
-        }
-
-        var newVisibleBounds = this._getExpandedVisibleBounds();
-        var clusterWidth = this._getClusterWidth();
-
-        var nodes = this._tree.cut(newVisibleBounds, clusterWidth);
+    _newLayersClustered: function(bounds, width) {
+        var nodes = this._tree.cut(bounds, width);
 
         var newLayers = [];
-        for( var i = 0; i < nodes.length; i++ ) {
-            var node = nodes[i];
+        var i, j, markers, node;
+
+        for( i = 0; i < nodes.length; i++ ) {
+            node = nodes[i];
 
             if( node.mass === 1 ) {
-                newLayers.push(node.getPoints()[0]);
+                markers = node.getPoints();
+                for( j = 0; j < markers.length; j++ ) {
+                    newLayers.push(markers[j]);
+                }
             } else {
                 if( ! node.marker ) {
                     node.marker = this._createMarkerCluster(node);
@@ -286,12 +289,47 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
             }
         }
 
-        this._featureGroup.clearLayers();
-        for( var j = 0; j < newLayers.length; j++ ) {
-            this._featureGroup.addLayer(newLayers[j]);
+        this._currentCut = nodes;
+        return newLayers;
+    },
+
+    _newLayersSingles: function(bounds) {
+        var nodes = this._tree.cutLeaves(bounds);
+        this._currentCut = nodes;
+
+        var markers = [];
+        for( var i = 0; i < nodes.length; i++ ) {
+            var points = nodes[i].getPoints();
+            for( var j = 0; j < points.length; j++ ) {
+                if( bounds.contains(points[j].getLatLng()) ) {
+                    markers.push(points[j]);
+                }
+            }
         }
 
-        this._currentCut = nodes;
+        return markers;
+    },
+
+    _refreshVisible: function() {
+        if( ! this._map ) {
+            return;
+        }
+
+        var newVisibleBounds = this._getExpandedVisibleBounds();
+        var clusterWidth = this._getClusterWidth();
+        var zoom = this._map.getZoom();
+
+        var newLayers;
+        if( zoom < this.options.singlesOnZoom ) {
+            newLayers = this._newLayersClustered(newVisibleBounds, clusterWidth);
+        } else {
+            newLayers = this._newLayersSingles(newVisibleBounds);
+        }
+
+        this._featureGroup.clearLayers();
+        for( j = 0; j < newLayers.length; j++ ) {
+            this._featureGroup.addLayer(newLayers[j]);
+        }
 
         this.fire('refresh', newLayers);
     },

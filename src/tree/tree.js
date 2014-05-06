@@ -390,6 +390,41 @@ QuadTree.prototype.cut = function(bounds, maxLng) {
     return this.aggregate(agg);
 };
 
+/*
+ *  Returns a cut of the tree that includes all leaf nodes within bounds.
+ */
+QuadTree.prototype.cutLeaves = function(bounds) {
+    bounds = L.latLngBounds(bounds);
+
+    var agg = L.QuadCluster.Aggregate()
+        .filter(function(node) {
+            if( ! node.active ) {
+                return true;
+            }
+
+            if( ! bounds.intersects(node.bounds) ) {
+                return true;
+            }
+
+            return false;
+        }).init(function() {
+            return [];
+        }).merge(function(state, oState) {
+            for( var i = 0; i < oState.length; i++ ) {
+                state.push(oState[i]);
+            }
+            return state;
+        }).finalize(function(state, node) {
+            if( node.leaf ) {
+                state.push(node);
+            }
+
+            return state;
+        })();
+
+    return this.aggregate(agg);
+};
+
 function QuadTreeFactory() {
     var _lat = function(d) { return d.lat; };
     var _lng = function(d) { return d.lng; };
