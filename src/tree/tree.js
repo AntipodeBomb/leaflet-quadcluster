@@ -4,434 +4,509 @@
  *  @copyright Tera Insights, LLC 2014
  */
 
-/* global d3:true, L:true */
+/* global L:true */
 
 (function() {
 
 /**
- *  Creates a new QuadTree generator. The generator can be configured with
- *  with an X accessor, Y accessor, and extent. The generator has defaults
- *  for all of these values.
+ *  Creates a new QuadTreeNode.
+ *  @constructor
+ *
+ *  @param {?QuadTreeNode} parent - The parent of the node (if it exists).
+ *  @param {L.LatLngBounds} bounds - The bounding box for the node.
+ *  @param {function} latAcc - The latitude accessor for points.
+ *  @param {function} lngAcc - The longitude accessor for points.
+ *  @param {number} epsilon - The difference in latitude/longitude at which
+ *      points are considered to be in the same location.
+ *  @param {*=} point - A point contained in this node.
  */
-L.QuadCluster.Tree = function() {
-    /*
-     *  The X position accessor. By default, for a given value `d`, the
-     *  accessor returns `d.x`.
-     */
-    var _x = function(d) { return d.x; };
-    /*
-     *  The Y position accessor. By default, for a given value `d`, the
-     *  accessor returns `d.y`.
-     */
-    var _y = function(d) { return d.y; };
+function QuadTreeNode(parent, bounds, latAcc, lngAcc, epsilon, point) {
+    this.bounds = bounds;
+    this.parent = parent;
+    this.latAcc = latAcc;
+    this.lngAcc = lngAcc;
+    this.epsilon = epsilon;
+    this.active = true;
+    this.leaf = true;
 
-    /*
-     *  The extent of the area covered by the points. By default, it is calculated
-     *  from the points that the tree is initialized with.
-     */
-    var _extent = null;
+    // Order: [ bottom-left, bottom-right, top-left, top-right ]
+    this.nodes = [];
+    this.points = [];
+    this.activePoints = [];
 
-    function calculateExtent(points) {
-        // Special case for no points
-        if( points.length === 0 ) {
-            throw new Error('Must specify an extent if no points given during initialization');
+    if( point ) {
+        this.points.push(point);
+        this.activePoints.push(point);
+        this.lat = latAcc(point);
+        this.lng = lngAcc(point);
+    }
+
+    this.computeGravityCenter();
+}
+
+/*
+ *  Adds the given point to a child of the node, creating the child if needed.
+ */
+QuadTreeNode.prototype.addToChild = function(point, lat, lng) {
+    var clat = (this.bounds.getSouth() + this.bounds.getNorth()) * 0.5;
+    var clng = (this.bounds.getWest() + this.bounds.getEast()) * 0.5;
+
+    // Node bounding box
+    var sLat, sLng, eLat, eLng;
+
+    var index = 0;
+
+    if( lat > cLat ) {
+        // Point in top half
+        index += 2;
+        sLat = cLat;
+        eLat = this.bounds.getNorth();
+    } else {
+        sLat = this.bounds.getSouth();
+        eLat = cLat;
+    }
+
+    if( lng > cLng ) {
+        // Point in right half
+        index += 1;
+        sLng = cLng;
+        eLng = this.bounds.getEast();
+    } else {
+        sLng = this.bounds.getWest();
+        eLng = cLng;
+    }
+
+    if( ! this.nodes[index] ) {
+        var bounds = L.latLngBounds([sLat, sLng], [eLat, eLng]);
+        this.nodes[index] = new QuadTreeNode(this, bounds,
+                                             this.latAcc, this.lngAcc,
+                                             this.epsilon, point);
+    } else {
+        this.nodes[index].add(point);
+    }
+};
+
+/*
+ *  Converts a leaf node to an internal node, moving the points contained by
+ *  the node to a new child.
+ */
+QuadTreeNode.prototype.convertToInternal = function() {
+    if( ! this.leaf ) {
+        throw new Error('Node is already internal');
+    }
+
+    if( this.points.length === 0 ) {
+        throw new Error('Converting node with no points to internal');
+    }
+
+    this.leaf = false;
+
+    for( var i = 0; i < this.points.length; i++ ) {
+        this.addToChild(this.points[i], this.lat, this.lng);
+    }
+
+    this.points = [];
+    this.activePoints = [];
+    this.lat = null;
+    this.lng = null;
+
+    return this;
+};
+
+/*
+ *  Adds the given point to the tree.
+ */
+QuadTreeNode.prototype.add = function(point) {
+    var lat = this.latAcc(point);
+    var lng = this.lngAcc(point);
+
+    if( ! this.leaf ) {
+        this.addToChild(point, lat, lng);
+    }
+
+    if( this.points.length === 0 ) {
+        // Just add the point and be done
+        this.points.push(point);
+        this.activePoints.push(point);
+        this.lat = lat;
+        this.lng = lng;
+        return this;
+    }
+
+    var dlat = Math.abs(this.lat - lat);
+    var dlng = Math.abs(this.lng - lng);
+
+    if( dlat < this.epsilon && dlng < this.epsilon ) {
+        // Point is essentially on the same place. Just add to list of points.
+        this.points.push(point);
+        this.activePoints.push(point);
+    } else {
+        // Convert this point to an internal point, then add the point to a
+        // child.
+        this.convertToInternal();
+        this.addToChild(point, lat, lng);
+    }
+
+    return this;
+};
+
+/*
+ *  Computes the gravity center and active state of the node. If computeChild
+ *  is truthy, the gravity center for child nodes will be updated before the
+ *  gravity center of this node.
+ */
+QuadTreeNode.prototype.computeGravityCenter = function(computeChild) {
+    if( ! this.active ) {
+        this.mass = 0;
+        this.center = L.latLng(0, 0);
+        return this;
+    }
+
+    var cLat = 0,
+        cLng = 0,
+        nLat = 0,
+        nLng = 0,
+        tPoints = 0,
+        nPoints = 0,
+        cWgt, nWgt,
+        i, child;
+
+    if( this.leaf ) {
+        // Leaf nodes only have points, no nodes.
+        for( i = 0; i < this.activePoints.length; i++ ) {
+            nLat = this.latAcc(this.activePoints[i]);
+            nLng = this.lngAcc(this.activePoints[i]);
+            cLat += nLat;
+            cLng += nLng;
+            tPoints += 1;
         }
 
-        var lower = [Infinity, Infinity];
-        var upper = [-Infinity, -Infinity];
+        cLat = tPoints > 0 ? cLat / tPoints : 0;
+        cLng = tPoints > 0 ? cLng / tPoints : 0;
+    } else {
+        // Internal nodes have only nodes, no points.
+        for( i = 0; i < this.nodes.length; i++ ) {
+            if( ! this.nodes[i] ) {
+                continue;
+            }
+            child = this.nodes[i];
+            if( computeChild ) {
+                child.computeGravityCenter(computeChild);
+            }
 
-        points.forEach(function(d) {
-            var x = _x(d);
-            var y = _y(d);
+            if( ! child.active ) {
+                continue;
+            }
 
-            lower[0] = Math.min(x, lower[0]);
-            lower[1] = Math.min(y, lower[1]);
+            nLat = child.center.lat;
+            nLng = child.center.lng;
+            nPoints = child.mass;
 
-            upper[0] = Math.max(x, upper[0]);
-            upper[1] = Math.max(y, upper[1]);
-        });
+            cWgt = tPoints / (tPoints + nPoints);
+            nWgt = nPoints / (tPoints + nPoints);
 
-        return [lower, upper];
+            // Moving average
+            cLat = (cLat * cWgt) + (nLat * nWgt);
+            cLng = (cLng * cWgt) + (nLng * nWgt);
+        }
     }
 
-    function squarifyExtent(extent) {
-        var x1 = extent[0][0];
-        var y1 = extent[0][1];
-        var x2 = extent[1][0];
-        var y2 = extent[1][1];
+    this.center = L.latLng(cLat, cLng);
+    this.mass = tPoints;
 
-        var dx = x2 - x1;
-        var dy = y2 - y1;
+    return this;
+};
 
-        // Algorithm taken from D3's quadtree.js
-        if( dx > dy ) y2 = y1 + dx;
-        else x2 = x1 + dy;
+/*
+ *  Gets the active points contained in this section of the tree.
+ */
+QuadTreeNode.prototype.getPoints = function(storage) {
+    storage = storage || [];
 
-        return [[x1, y1], [x2, y2]];
+    if( ! this.active ) {
+        return storage;
+    }
+
+    if( this.leaf ) {
+        for( var i = 0; i < this.activePoints.length; i++ ) {
+            storage.push(this.activePoints[i]);
+        }
+    } else {
+        for( var j = 0; j < this.nodes.lenth; j++ ) {
+            if( this.nodes[j] && this.nodes[j].active ) {
+                this.nodes[j].getPoints(storage);
+            }
+        }
+    }
+
+    return storage;
+};
+
+/*
+ *  Computes the new set of active points using the given filtration
+ *  function.
+ *
+ *  The filterFunc should take as an argument a point and return true if the
+ *  point should be in the active set.
+ */
+QuadTreeNode.prototype.filter = function(filterFunc) {
+    if( this.leaf ) {
+        this.activePoints = this.points.filter(filterFunc);
+        this.computeGravityCenter(false);
+    } else {
+        for( var i = 0; i < this.nodes.length; i++ ) {
+            if( this.nodes[i] ) {
+                this.nodes[i].filter(filterFunc);
+            }
+        }
+        this.computeGravityCenter(false);
+    }
+};
+
+/*
+ *  Performs aggregation on a tree node and its children.
+ *
+ *  @param {TreeAggregate} agg - The aggregate information.
+ *
+ *  @returns {*} The aggregate state or null if no aggregation performed.
+ */
+QuadTreeNode.prototype.aggregate = function(agg) {
+    var state = null;
+    var childState;
+    var children = this.nodes;
+
+    if( !agg.filter(this) ) {
+        state = agg.initialize();
+        state = agg.accumulate(state, this);
+
+        for( var i = 0; i < children.length; i++ ) {
+            if( children[i] ) {
+                childState = children[i].aggregate(agg);
+                if( childState !== null ) {
+                    state = agg.merge(state, childState, i);
+                }
+            }
+        }
+
+        state = agg.finalize(state, this);
+    }
+
+    return state;
+};
+
+/**
+ *  Shallow interface on top of the QuadTreeNode
+ *  @constructor
+ */
+function QuadTree(bounds, latAcc, lngAcc, epsilon, points) {
+    this.root = new QuadTreeNode(null, bounds, latAcc, lngAcc, epsilon);
+
+    for( var i = 0; i < points.length; i++ ) {
+        this.root.add(points[i]);
+    }
+
+    this.root.computeGravityCenter(true);
+}
+
+/*
+ *  Adds a new point to the tree and recomputes the gravity centers.
+ */
+QuadTree.prototype.add = function(point) {
+    this.root.add(point);
+    this.root.computeGravityCenter(true);
+};
+
+/*
+ *  Performs a filtration on the tree.
+ */
+QuadTree.prototype.filter = function(filterFunc) {
+    this.root.filter(filterFunc);
+};
+
+/*
+ *  Performs an aggregation on the tree. If there were no active nodes, then
+ *  an empty state is returned.
+ */
+QuadTree.prototype.aggregate = function(agg) {
+    var ret = this.root.aggregate(agg);
+
+    if( ret === null ) {
+        ret = agg.initialize();
+    }
+
+    return ret;
+};
+
+/*
+ *  Returns a cut of the tree where all nodes within the cut have their gravity
+ *  center within `bounds` and are at most `maxLng` wide.
+ */
+QuadTree.prototype.cut = function(bounds, maxLng) {
+    bounds = L.latLngBounds(bounds);
+
+    var agg = L.QuadCluster.Aggregate()
+        .filter(function(node) {
+            if( ! node.active ) {
+                // Node isn't active, skip it.
+                return true;
+            }
+
+            if( ! bounds.intersects(node.bounds) ) {
+                // Node isn't in field of view, skip.
+                return true;
+            }
+
+            if( ! node.parent ) {
+                // Always check root node if it is active and visible.
+                return false;
+            }
+
+            var diffLng = Math.abs(node.bounds.getEast() - node.bounds.getWest());
+            if( diffLng < (maxLng / 2) ) {
+                // Parent would be good enough.
+                return true;
+            }
+
+            // If not filtered out by this point, visit it.
+            return false;
+        }).init(function() {
+            return [];
+        }).merge(function(state, oState) {
+            for( var i = 0; i < oState.length; i++ ) {
+                state.push(oState[i]);
+            }
+        }).finalize(function(state, node) {
+            // If no children made the cut, then we are the furthest down
+            // node that is good enough.
+            if( state.length === 0 ) {
+                // Don't bother showing of the node center isn't in the
+                // field of view.
+                if( bounds.contains(node.center) ) {
+                    state.push(node);
+                }
+            }
+
+            return state;
+        })();
+
+    return this.aggregate(agg);
+};
+
+function QuadTreeFactory() {
+    var _lat = function(d) { return d.lat; };
+    var _lng = function(d) { return d.lng; };
+    var _bounds = null;
+    var _epsilon = 0.1;
+
+    function calculateBounds(points) {
+        if( points.length === 0 ) {
+            throw new Error('Must specify bounds of no points given for QuadTree initialization');
+        }
+
+        var south = Infinity;
+        var west = Infinity;
+        var north = -Infinity;
+        var east = -Infinity;
+
+        var i, point, lat, lng;
+
+        for( i = 0; i < points.length; i++ ) {
+            point = points[i];
+            lat = _lat(point);
+            lng = _lng(point);
+
+            south = Math.min(lat, south);
+            west = Math.min(lng, west);
+
+            north = Math.max(lat, north);
+            east = Math.max(lng, east);
+        }
+
+        return L.latLngBounds([south, west], [north, east]);
+    }
+
+    function squarifyBounds(bounds) {
+        var lat1 = bounds.getSouth();
+        var lat2 = bounds.getNorth();
+        var lng1 = bounds.getWest();
+        var lng2 = bounds.getEast();
+
+        var dlat = lat2 - lat1;
+        var dlng = lng2 - lng1;
+
+        if( dlng > dlat ) {
+            lat2 = lat1 + dlng;
+        } else {
+            lng2 = lng1 + dlat;
+        }
+
+        return L.latLngBounds([lat1, lng1], [lat2, lng2]);
     }
 
     /*
-     *  The tree factory function.
+     *  Tree factory function.
      */
     var _gen = function(points) {
-        var extent = _extent;
-        if( !extent ) {
-            extent = calculateExtent(points);
+        var bounds = _bounds;
+        if( !bounds ) {
+            bounds = calculateBounds(bounds);
         }
-        extent = squarifyExtent(extent);
-        return createTree(points, _x, _y, extent);
+        bounds = squarifyBounds(bounds);
+
+        return new QuadTree(bounds, _lat, _lng, _epsilon, points);
     };
 
-
     /*
-     *  Gets or sets the X value accessor.
+     *  Gets or sets longitude accessor.
      */
-    _gen.x = function(_) {
+    _gen.x = _gen.lng = function(_) {
         if( arguments.length === 0 ) {
-            return _x;
+            return _lng;
         }
 
-        _x = _;
+        _lng = _;
         return _gen;
     };
 
     /*
-     *  Gets or sets the Y value accessor.
+     *  Gets or sets latitude accessor.
      */
-    _gen.y = function(_) {
+    _gen.y = _gen.lat = function(_) {
         if( arguments.length === 0 ) {
-            return _y;
+            return _lat;
         }
 
-        _y = _;
+        _lat = _;
         return _gen;
     };
 
     /*
-     *  Gets or sets the extent.
+     *  Gets or sets bounds.
      */
-    _gen.extent = function(_) {
+    _gen.extent = _gen.bounds = function(_) {
         if( arguments.length === 0 ) {
-            return _extent;
+            return _bounds;
         }
 
-        _extent = _;
+        _bounds = _;
+        return _gen;
+    };
+
+    /*
+     *  Gets or sets epsilon.
+     */
+    _gen.epsilon = function(_) {
+        if( arguments.length === 0 ) {
+            return _epsilon;
+        }
+
+        _epsilon = _;
         return _gen;
     };
 
     return _gen;
-};
-
-/*
- *  Creates a new quadtree from a set of points.
- *
- *  Each node has the following properties:
- *
- *  id - a number unique for each node in the tree.
- *  depth - the depth in the tree at which the node resides (root is 0).
- *  bounds - A LatLngBounds that gives the area the node covers
- *  parentID - the id of the parent node, if any.
- *  nodes - a sparse array of the four child nodes in order: bottom-left, bottom-right, top-left, top-right
- *  leaf - a boolean indicating whether the node is a leaf (true) or internal (false)
- *  point - the point associated with this node, if any (can apply to leaves or internal)
- *  x - the x-coordinate of the associated point, if any
- *  y - the y-coordinate of the associated point, if any
- *  active - boolean whether or not the node is active by the most recent filter
- *  mass - the number of active points covered by this node
- *  center - the gravity center of the node
- */
-function createTree(points, x, y, extent) {
-    var _factory = d3.geom.quadtree()
-        .x(x)
-        .y(y)
-        .extent(extent);
-
-    var _x1 = extent[0][0];
-    var _y1 = extent[0][1];
-    var _x2 = extent[1][0];
-    var _y2 = extent[1][1];
-
-    var _root = _factory(points);
-
-    var _tree = { };
-
-    var _nextID = 1;
-
-    /*
-     *  Perform aggregation on the tree.
-     */
-    _tree.aggregate = function(aggregate) {
-        var ret = aggregateNode(aggregate, _root, _x1, _y1, _x2, _y2);
-
-        if( ret === null ) {
-            ret = aggregate.initialize();
-        }
-
-        return ret;
-    };
-
-    /*
-     *  Add a new node to the tree.
-     */
-    _tree.add = function(point) {
-        _root.add(point);
-        // TODO: Be smarter in how we update the nodes.
-        enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
-    };
-
-    /*
-     *  Add multiple nodes at once.
-     */
-    _tree.addArray = function(arr) {
-        for( var i = 0; i < arr.length; i++ ) {
-            _root.add(arr[i]);
-        }
-
-        enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
-    };
-
-    /*
-     *  Returns the root node.
-     */
-    _tree.root = function() {
-        return _root;
-    };
-
-    _tree.clear = function() {
-        _root = _factory([]);
-        _nextID = 1;
-        enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
-
-        return _tree;
-    };
-
-    /*
-     *  Returns the overall bounds of the points contained within the tree.
-     */
-    _tree.bounds = function() {
-        var bounds = new L.LatLngBounds();
-        bounds.extend(_root.bounds);
-        return bounds;
-    };
-
-    function computeGravityCenter(node) {
-        if( ! node.active ) {
-            node.mass = 0;
-            node.center = L.latLng(0, 0);
-            return;
-        }
-
-        var cX = 0;
-        var cY = 0;
-
-        var totalPoints = 0;
-        for( var i = 0; i < 4; i++ ) {
-            if( node.nodes[i] && node.nodes[i].active ) {
-                var nX = node.nodes[i].center.lng;
-                var nY = node.nodes[i].center.lat;
-                var nodePoints = node.nodes[i].mass;
-                // Moving average
-                var cWgt = totalPoints / (totalPoints + nodePoints);
-                var nWgt = nodePoints / (totalPoints + nodePoints);
-                cX = (cX * cWgt) + (nX * nWgt);
-                cY = (cY * cWgt) + (nY * nWgt);
-                totalPoints += nodePoints;
-            }
-        }
-
-        if( node.point ) {
-            cX = (cX * (totalPoints / (totalPoints + 1))) + (node.x / (totalPoints + 1));
-            cY = (cY * (totalPoints / (totalPoints + 1))) + (node.y / (totalPoints + 1));
-            totalPoints += 1;
-        }
-
-        node.mass = totalPoints;
-        node.center = L.latLng(cY, cX);
-        node.active = totalPoints > 0;
-    }
-
-    function getPoints(storageArray) {
-        storageArray = storageArray || [];
-
-        // Shortcut for inactive nodes
-        if( ! this.active ) {
-            return storageArray;
-        }
-
-        if( this.point ) {
-            storageArray.push(this.point);
-        }
-
-        for( var i = 0; i < this.nodes.length; i++ ) {
-            if( this.nodes[i] ) {
-                this.nodes[i].getPoints(storageArray);
-            }
-        }
-
-        return storageArray;
-    }
-
-    function enhanceNode(node, depth, x1, y1, x2, y2) {
-        var sx = (x1 + x2) * 0.5;
-        var sy = (y1 + y2) * 0.5;
-
-        var children = node.nodes;
-
-        node.depth = depth;
-        node.bounds = L.latLngBounds([[y1, x1], [y2, x2]]);
-
-        if( !node.id ) {
-            node.id = _nextID++;
-            node.active = true;
-        }
-
-        if( children[0] ) { // bottom left child
-            enhanceNode(children[0], depth+1, x1, y1, sx, sy);
-            children[0].parentID = node.id;
-        }
-
-        if( children[1] ) { // bottom right child
-            enhanceNode(children[1], depth+1, sx, y1, x2, sy);
-            children[1].parentID = node.id;
-        }
-
-        if( children[2] ) { // top left child
-            enhanceNode(children[2], depth+1, x1, sy, sx, y2);
-            children[2].parentID = node.id;
-        }
-
-        if( children[3] ) { // top right child
-            enhanceNode(children[3], depth+1, sx, sy, x2, y2);
-            children[3].parentID = node.id;
-        }
-
-        computeGravityCenter(node);
-
-        // Added methods
-        node.getPoints = getPoints;
-    }
-
-    // Uses the given filter function to determine which nodes are active.
-    _tree.filter = function(filterFunc) {
-        var agg = L.QuadCluster.Aggregate().finalize(function(state, node) {
-            node.active = filterFunc(node);
-            computeGravityCenter(node);
-            return state;
-        })();
-
-        _tree.aggregate(agg);
-    };
-
-    // Returns a cut of the tree where the gravity center of all active nodes
-    // whose gravity center fits within `bounds` and are at most
-    // 'maxLong' wide
-    _tree.cut = function(bounds, maxLong) {
-        bounds = L.latLngBounds(bounds);
-
-        var agg = L.QuadCluster.Aggregate()
-            .filter(function(node) {
-                if( ! node.active ) {
-                    // Node isn't active, skip it.
-                    return true;
-                }
-
-                if( ! bounds.intersects(node.bounds) ) {
-                    // Node isn't in field of view, skip.
-                    return true;
-                }
-
-                // Always check the root node if it is active and visible.
-                if( ! node.parentID ) {
-                    return false;
-                }
-
-                var diffLong = Math.abs(node.bounds.getEast() - node.bounds.getWest());
-                if( diffLong < (maxLong / 2) ) {
-                    // Parent would be good enough.
-                    return true;
-                }
-
-                return false;
-            }).init(function() {
-                return [];
-            }).merge(function(state, oState) {
-                return state.concat(oState);
-            }).finalize(function(state, node) {
-                // If no children made the cut, then we are the furthest
-                // down node that is good enough.
-                if( state.length === 0 ) {
-                    // Don't bother showing if the node center isn't in the
-                    // field of view
-                    if( bounds.contains(node.center) ) {
-                        state.push(node);
-                    }
-                }
-
-                return state;
-            })();
-
-        return _tree.aggregate(agg);
-    };
-
-    // Perform initial enhancement of nodes
-    enhanceNode(_root, 0, _x1, _y1, _x2, _y2);
-
-    return _tree;
 }
 
-/**
- *  Performs aggregation on a tree node and its children.
- *
- *  @param {TreeAggregate} aggregate - The aggregate information.
- *  @param {object} node - The tree node.
- *
- *  @returns {*} The aggregate state.
- */
-function aggregateNode(aggregate, node) {
-    var state = null;
-    var childState;
-
-    var children = node.nodes;
-
-    if( !aggregate.filter(node) ) {
-        state = aggregate.initialize();
-        state = aggregate.accumulate(state, node);
-
-        // Note: d3's quadtree has lower Y values being higher up.
-        // We need to take this into account.
-
-        if( children[0] ) { // Bottom left child
-            childState = aggregateNode(aggregate, children[0]);
-            if( childState !== null ) {
-                state = aggregate.merge(state, childState, 0);
-            }
-        }
-
-        if( children[1] ) { // Bottom right child
-            childState = aggregateNode(aggregate, children[1]);
-            if( childState !== null ) {
-                state = aggregate.merge(state, childState, 1);
-            }
-        }
-
-        if( children[2] ) { // Top left child
-            childState = aggregateNode(aggregate, children[2]);
-            if( childState !== null ) {
-                state = aggregate.merge(state, childState, 2);
-            }
-        }
-
-        if( children[3] ) { // Top right child
-            childState = aggregateNode(aggregate, children[3]);
-            if( childState !== null ) {
-                state = aggregate.merge(state, childState, 3);
-            }
-        }
-
-        state = aggregate.finalize(state, node);
-    }
-
-    return state;
-}
+L.QuadCluster.Tree = QuadTreeFactory;
 
 }());

@@ -37,8 +37,8 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         this._nonPointGroup.on(L.FeatureGroup.EVENTS, this._propagateEvent, this);
 
         var treeGen = L.QuadCluster.Tree()
-            .x(function(d) { return d.getLatLng().lng; })
-            .y(function(d) { return d.getLatLng().lat; });
+            .lng(function(d) { return d.getLatLng().lng; })
+            .lat(function(d) { return d.getLatLng().lat; });
 
         this._markers = markers;
 
