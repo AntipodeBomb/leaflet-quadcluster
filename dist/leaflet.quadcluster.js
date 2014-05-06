@@ -53,8 +53,8 @@ function QuadTreeNode(parent, bounds, latAcc, lngAcc, epsilon, point) {
  *  Adds the given point to a child of the node, creating the child if needed.
  */
 QuadTreeNode.prototype.addToChild = function(point, lat, lng) {
-    var clat = (this.bounds.getSouth() + this.bounds.getNorth()) * 0.5;
-    var clng = (this.bounds.getWest() + this.bounds.getEast()) * 0.5;
+    var cLat = (this.bounds.getSouth() + this.bounds.getNorth()) * 0.5;
+    var cLng = (this.bounds.getWest() + this.bounds.getEast()) * 0.5;
 
     // Node bounding box
     var sLat, sLng, eLat, eLng;
@@ -127,6 +127,7 @@ QuadTreeNode.prototype.add = function(point) {
 
     if( ! this.leaf ) {
         this.addToChild(point, lat, lng);
+        return this;
     }
 
     if( this.points.length === 0 ) {
@@ -161,12 +162,6 @@ QuadTreeNode.prototype.add = function(point) {
  *  gravity center of this node.
  */
 QuadTreeNode.prototype.computeGravityCenter = function(computeChild) {
-    if( ! this.active ) {
-        this.mass = 0;
-        this.center = L.latLng(0, 0);
-        return this;
-    }
-
     var cLat = 0,
         cLng = 0,
         nLat = 0,
@@ -213,11 +208,13 @@ QuadTreeNode.prototype.computeGravityCenter = function(computeChild) {
             // Moving average
             cLat = (cLat * cWgt) + (nLat * nWgt);
             cLng = (cLng * cWgt) + (nLng * nWgt);
+            tPoints += nPoints;
         }
     }
 
     this.center = L.latLng(cLat, cLng);
     this.mass = tPoints;
+    this.active = tPoints > 0;
 
     return this;
 };
@@ -237,7 +234,7 @@ QuadTreeNode.prototype.getPoints = function(storage) {
             storage.push(this.activePoints[i]);
         }
     } else {
-        for( var j = 0; j < this.nodes.lenth; j++ ) {
+        for( var j = 0; j < this.nodes.length; j++ ) {
             if( this.nodes[j] && this.nodes[j].active ) {
                 this.nodes[j].getPoints(storage);
             }
@@ -380,6 +377,7 @@ QuadTree.prototype.cut = function(bounds, maxLng) {
             for( var i = 0; i < oState.length; i++ ) {
                 state.push(oState[i]);
             }
+            return state;
         }).finalize(function(state, node) {
             // If no children made the cut, then we are the furthest down
             // node that is good enough.
@@ -454,7 +452,7 @@ function QuadTreeFactory() {
     var _gen = function(points) {
         var bounds = _bounds;
         if( !bounds ) {
-            bounds = calculateBounds(bounds);
+            bounds = calculateBounds(points);
         }
         bounds = squarifyBounds(bounds);
 
