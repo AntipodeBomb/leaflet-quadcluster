@@ -13,7 +13,14 @@
  */
 L.QuadCluster.MarkerCluster = L.Marker.extend({
     initialize: function(group, node) {
-        L.Marker.prototype.initialize.call(this, node.center, {icon: this});
+        var center;
+        if( group.options.useGravityCenter ) {
+            center = node.center;
+        } else {
+            center = node.bounds.getCenter();
+        }
+
+        L.Marker.prototype.initialize.call(this, center, {icon: this});
 
         this._group = group;
         this._node = node;
