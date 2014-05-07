@@ -24,6 +24,7 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         zoomToBoundsOnClick: true,
         spiderfyOnMaxZoom: true,
 
+        clusterMinimum: 10, // Cluster minimum size
         singlesOnZoom: 14,  // Individual markers past this zoom level
         clusterEpsilon: 0.01,   // How close two points have to be to be the
                                 // same location
@@ -269,6 +270,8 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
 
     _newLayersClustered: function(bounds, width) {
         var nodes = this._tree.cut(bounds, width);
+        this._currentCut = nodes;
+        this._updateCutStats();
 
         var newLayers = [];
         var i, j, markers, node;
@@ -276,7 +279,7 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         for( i = 0; i < nodes.length; i++ ) {
             node = nodes[i];
 
-            if( node.mass === 1 ) {
+            if( node.mass < this.options.clusterMinimum ) {
                 markers = node.getPoints();
                 for( j = 0; j < markers.length; j++ ) {
                     newLayers.push(markers[j]);
@@ -290,13 +293,14 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
             }
         }
 
-        this._currentCut = nodes;
         return newLayers;
     },
 
     _newLayersSingles: function(bounds) {
         var nodes = this._tree.cutLeaves(bounds);
         this._currentCut = nodes;
+
+        this._updateCutStats();
 
         var markers = [];
         for( var i = 0; i < nodes.length; i++ ) {
@@ -349,8 +353,6 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         } else {
             newLayers = this._newLayersSingles(newVisibleBounds);
         }
-
-        this._updateCutStats();
 
         this._featureGroup.clearLayers();
         for( j = 0; j < newLayers.length; j++ ) {
