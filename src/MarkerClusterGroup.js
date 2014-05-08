@@ -213,6 +213,10 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
         this._refreshVisible();
     },
 
+    aggregate: function(agg) {
+        return this._tree.aggregate(agg);
+    },
+
     getVisible: function() {
         return this._featureGroup.getLayers();
     },
