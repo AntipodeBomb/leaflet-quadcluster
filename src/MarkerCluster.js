@@ -1,7 +1,8 @@
 /**
  *  @overview Defines a new type of marker that represents a cluster of markers.
  *  @author Christopher Dudley <chris@terainsights.com>
- *  @copyright 2014 Tera Insights, LLC. All Rights Reserved.
+ *  @copyright 2014 Tera Insights, LLC. 2014
+ *  @license MIT
  *
  *  Inspired by the MarkerCluster class in Leaflet.markercluster.
  *  Leaflet.markercluster: Copyright 2012 David Leaver

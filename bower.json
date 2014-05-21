@@ -3,11 +3,15 @@
   "version": "0.0.1",
   "authors": ["Christopher Dudley <chris@terainsights.com>"],
   "description": "Provides Quadtree-based Marker Clustering and Filtration for Leaflet",
+  "license": "MIT",
   "dependencies": {
     "leaflet": "~0.7.1",
     "d3": "~3.4.6"
   },
-  "main": "dist/leaflet.quadcluster.js",
+  "main": [
+      "dist/leaflet.quadcluster.min.js",
+      "dist/leaflet.quadcluster.css"
+  ],
   "private": true,
   "ignore": [
       "**/.*",

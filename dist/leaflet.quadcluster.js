@@ -7,6 +7,7 @@ L.QuadCluster = {
  *  @overview API to create quadtrees and perform aggregation on them.
  *  @author Christopher Dudley <chris@terainsights.com>
  *  @copyright Tera Insights, LLC 2014
+ *  @license MIT
  */
 
 /* global L:true */
@@ -712,7 +713,8 @@ L.QuadCluster.Aggregate = function () {
 /**
  *  @overview Defines a new type of marker that represents a cluster of markers.
  *  @author Christopher Dudley <chris@terainsights.com>
- *  @copyright 2014 Tera Insights, LLC. All Rights Reserved.
+ *  @copyright 2014 Tera Insights, LLC. 2014
+ *  @license MIT
  *
  *  Inspired by the MarkerCluster class in Leaflet.markercluster.
  *  Leaflet.markercluster: Copyright 2012 David Leaver
@@ -790,7 +792,8 @@ L.QuadCluster.MarkerCluster = L.Marker.extend({
 /**
  *  @overview A layer that automatically clusters markers.
  *  @author Christopher Dudley <chris@terainsights.com>
- *  @copyright 2014 Tera Insights, LLC. All Rights Reserved.
+ *  @copyright 2014 Tera Insights, LLC. 2014
+ *  @license MIT
  *
  *  Inspired by the MarkerClusterGroup class in Leaflet.markercluster.
  *  Leaflet.markercluster:  Copyright 2012 Dave Leaver

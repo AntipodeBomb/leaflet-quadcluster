@@ -2,6 +2,7 @@
  *  @overview API to create quadtrees and perform aggregation on them.
  *  @author Christopher Dudley <chris@terainsights.com>
  *  @copyright Tera Insights, LLC 2014
+ *  @license MIT
  */
 
 /* global L:true */
