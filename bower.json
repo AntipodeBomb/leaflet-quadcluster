@@ -1,6 +1,6 @@
 {
   "name": "leaflet-quadcluster",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "authors": ["Christopher Dudley <chris@terainsights.com>"],
   "description": "Provides Quadtree-based Marker Clustering and Filtration for Leaflet",
   "license": "MIT",
