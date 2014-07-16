@@ -1,6 +1,6 @@
 
 L.QuadCluster = {
-    version: '0.0.1'
+    version: '0.1.3'
 };
 
 /**
@@ -1139,6 +1139,8 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
             return;
         }
 
+        var i;
+
         var newVisibleBounds = this._getExpandedVisibleBounds();
         var clusterWidth = this._getClusterWidth();
         var zoom = this._map.getZoom();
@@ -1150,9 +1152,19 @@ L.QuadCluster.MarkerClusterGroup = L.FeatureGroup.extend({
             newLayers = this._newLayersSingles(newVisibleBounds);
         }
 
-        this._featureGroup.clearLayers();
-        for( j = 0; j < newLayers.length; j++ ) {
-            this._featureGroup.addLayer(newLayers[j]);
+        var oldLayers = this._featureGroup.getLayers();
+        for( i = 0; i < oldLayers.length; i++ ) {
+            if( newLayers.indexOf(oldLayers[i]) < 0 ) {
+                // No longer visible, remove
+                this._featureGroup.removeLayer(oldLayers[i]);
+            }
+        }
+
+        for( i = 0; i < newLayers.length; i++ ) {
+            if( ! this._featureGroup.hasLayer(newLayers[i]) ) {
+                // New visible layer, add to map
+                this._featureGroup.addLayer(newLayers[i]);
+            }
         }
 
         this.fire('refresh', newLayers);

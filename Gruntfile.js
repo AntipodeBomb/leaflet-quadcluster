@@ -14,7 +14,7 @@ module.exports = function(grunt) {
         concat: {
             source: {
                 files: [{
-                    dest: 'dist/<%= pkg.name %>.js',
+                    dest: 'dist/leaflet.quadcluster.js',
                     src: [
                         'src/api.js',
                         'src/tree/tree.js', 'src/tree/aggregate.js',
@@ -34,14 +34,14 @@ module.exports = function(grunt) {
             },
             source: {
                 files: [{
-                    src: [ 'dist/<%= pkg.name %>.js' ],
-                    dest: 'dist/<%= pkg.name %>.min.js'
+                    src: [ 'dist/leaflet.quadcluster.js' ],
+                    dest: 'dist/leaflet.quadcluster.min.js'
                 }]
             }
         },
         clean: {
             javascript: {
-                src: [ 'dist/<%= pkg.name %>.js', 'dist/<%= pkg.name %>.min.(js|map)' ]
+                src: [ 'dist/leaflet.quadcluster.js', 'dist/leaflet.quadcluster.min.(js|map)' ]
             }
         }
     });
