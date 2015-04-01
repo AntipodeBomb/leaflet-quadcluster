@@ -33,7 +33,7 @@ L.QuadCluster.MarkerCluster = L.Marker.extend({
     getAllChildMarkers: function(storageArray) {
         storageArray = storageArray || [];
 
-        node.getPoints(storageArray);
+        this._node.getPoints(storageArray);
         return storageArray;
     },
 
